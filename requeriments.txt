@@ -1,0 +1,10 @@
+Flask==2.x
+flask-cors
+numpy
+pandas
+scikit-image
+scikit-learn
+joblib
+requests
+gunicorn
+
