@@ -26,7 +26,7 @@ app.config["ALLOWED_EXTENSIONS"] = {"png", "jpg", "jpeg"}  # Extensiones permiti
 def load_model():
     try:
         app.config["MODEL"] = download_model_from_drive(
-            "1A2B3C4D5E6F7G8H9"
+            "1iof8wrsBxvgzvMSZzApf1cOSUMBcbX5V"
         )  # Reemplaza con tu ID
     except Exception as e:
         print(f"Error al cargar el modelo: {e}")
