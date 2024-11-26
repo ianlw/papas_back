@@ -5,7 +5,6 @@ import cv2
 import joblib
 import numpy as np
 import pandas as pd
-import requests
 from flask import Flask
 from flask import jsonify
 from flask import request
@@ -20,30 +19,6 @@ app = Flask(__name__)
 CORS(app)  # Permitir conexiones desde otros dominios
 app.config["UPLOAD_FOLDER"] = "uploads"  # Carpeta para las imágenes cargadas
 app.config["ALLOWED_EXTENSIONS"] = {"png", "jpg", "jpeg"}  # Extensiones permitidas
-
-
-@app.before_first_request
-def load_model():
-    try:
-        app.config["MODEL"] = download_model_from_drive(
-            "1iof8wrsBxvgzvMSZzApf1cOSUMBcbX5V"
-        )  # Reemplaza con tu ID
-    except Exception as e:
-        print(f"Error al cargar el modelo: {e}")
-
-
-def download_model_from_drive(drive_id, output_path="papas.pkl"):
-    url = f"https://drive.google.com/uc?id={drive_id}"
-    response = requests.get(url, stream=True)
-
-    if response.status_code == 200:
-        with open(output_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=1024):
-                f.write(chunk)
-        print(f"Modelo descargado y guardado en {output_path}")
-        return joblib.load(output_path)
-    else:
-        raise Exception(f"Error al descargar el modelo: {response.status_code}")
 
 
 # Función para verificar si el archivo tiene una extensión permitida
@@ -649,7 +624,7 @@ def predict_image_class(image_path, model_path="papas.pkl"):
         features_df = pd.DataFrame([features])
 
         # Realizar la predicción con el DataFrame
-        prediction = app.config["MODEL"].predict(features_df)
+        prediction = model.predict(features_df)
         # Convertir la predicción a un tipo serializable (como int)
         prediction = int(prediction[0])
         return prediction
