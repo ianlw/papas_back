@@ -1,3 +1,4 @@
+import io
 import os
 import warnings
 
@@ -5,6 +6,7 @@ import cv2
 import joblib
 import numpy as np
 import pandas as pd
+import rembg
 from flask import Flask
 from flask import jsonify
 from flask import request
@@ -19,6 +21,7 @@ app = Flask(__name__)
 CORS(app)  # Permitir conexiones desde otros dominios
 app.config["UPLOAD_FOLDER"] = "uploads"  # Carpeta para las imágenes cargadas
 app.config["ALLOWED_EXTENSIONS"] = {"png", "jpg", "jpeg"}  # Extensiones permitidas
+Image.MAX_IMAGE_PIXELS = None
 
 
 # Función para verificar si el archivo tiene una extensión permitida
@@ -27,6 +30,38 @@ def allowed_file(filename):
         "." in filename
         and filename.rsplit(".", 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
     )
+
+
+def remove_background(input_path, output_path):
+
+    with Image.open(input_path) as img:
+        # Obtiene las dimensiones actuales de la imagen
+        width, height = img.size
+
+        # Verifica si la imagen excede los 2000x2000 píxeles
+        if width > 1500 or height > 1500:
+            # Redimensiona la imagen manteniendo la proporción
+            img.thumbnail((1500, 1500))
+            print(f"Imagen redimensionada a: {img.size}")
+        else:
+            print("No se realiza ninguna modificación.")
+        img.save("./uploads/resized_image.png")
+
+    # Leer la imagen
+    with open("./uploads/resized_image.png", "rb") as file:
+        image_data = file.read()
+    # Eliminar el fondo usando rembg
+    result = rembg.remove(image_data)
+    # Convertir el resultado en una imagen de Pillow
+    image = Image.open(io.BytesIO(result)).convert("RGBA")
+    # Crear un fondo blanco del mismo tamaño que la imagen original
+    background = Image.new("RGBA", image.size, (255, 255, 255, 255))
+    # Combinar la imagen con el fondo blanco
+    final_image = Image.alpha_composite(background, image).convert("RGB")
+    # Guardar la imagen procesada en el directorio de salida
+    final_image.save(output_path)
+    return output_path
+    # print(f"Imagen guardada en: {output_path}")
 
 
 # Función para extraer características de color
@@ -65,7 +100,8 @@ def extract_shape_features(gray_image):
 def process_single_image(image_path):
     try:
         # Leer la imagen
-        image = np.array(Image.open(image_path))
+        remove = remove_background(image_path, "./uploads/remove_back.png")
+        image = np.array(Image.open(remove))
         gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
         # Extraer características
@@ -663,6 +699,8 @@ def predict():
         if prediction is not None:
             # Opcional: borrar el archivo después de procesarlo
             os.remove(file_path)
+            os.remove("./uploads/resized_image.png")
+            os.remove("./uploads/remove_back.png")
             return jsonify({"prediction": prediction}), 200
         else:
             return jsonify({"error": "Prediction failed"}), 500
