@@ -1,4 +1,3 @@
-import io
 import os
 import warnings
 
@@ -6,7 +5,6 @@ import cv2
 import joblib
 import numpy as np
 import pandas as pd
-import rembg
 from flask import Flask
 from flask import jsonify
 from flask import request
@@ -16,7 +14,6 @@ from skimage.feature import graycomatrix
 from skimage.feature import graycoprops
 from skimage.feature import local_binary_pattern
 
-Image.MAX_IMAGE_PIXELS = None  # Desactivar el límite
 # Configurar Flask
 app = Flask(__name__)
 CORS(app)  # Permitir conexiones desde otros dominios
@@ -30,40 +27,6 @@ def allowed_file(filename):
         "." in filename
         and filename.rsplit(".", 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
     )
-
-
-# Función para eliminar el fondo de la imagen
-def remove_background(input_path, output_path):
-    # Leer la imagen
-    with open(input_path, "rb") as file:
-        image_data = file.read()
-
-    # Abrir la imagen en formato Pillow
-    image = Image.open(io.BytesIO(image_data))
-
-    # Redimensionar la imagen antes de eliminar el fondo (manteniendo la relación de aspecto)
-    image.thumbnail((3000, 3000), Image.LANCZOS)
-
-    # Convertir la imagen a bytes después de redimensionarla
-    with io.BytesIO() as byte_io:
-        image.save(byte_io, format="PNG")
-        image_data_resized = byte_io.getvalue()
-
-    # Eliminar el fondo usando rembg
-    result = rembg.remove(image_data_resized)
-
-    # Convertir el resultado en una imagen de Pillow
-    image = Image.open(io.BytesIO(result)).convert("RGBA")
-
-    # Crear un fondo blanco del mismo tamaño que la imagen procesada
-    background = Image.new("RGBA", image.size, (255, 255, 255, 255))
-
-    # Combinar la imagen con el fondo blanco
-    final_image = Image.alpha_composite(background, image).convert("RGB")
-
-    # Guardar la imagen procesada en el directorio de salida
-    final_image.save(output_path, "PNG")
-    print(f"Imagen guardada en: {output_path}")
 
 
 # Función para extraer características de color
@@ -694,19 +657,12 @@ def predict():
         # Registrar que el archivo fue guardado
         app.logger.info(f"Archivo guardado temporalmente en: {file_path}")
 
-        # Eliminar el fondo de la imagen
-        background_removed_path = os.path.join(
-            app.config["UPLOAD_FOLDER"], "background_removed.png"
-        )
-        remove_background(file_path, background_removed_path)
-
-        # Realizar la predicción con la imagen sin fondo
-        prediction = predict_image_class(background_removed_path)
+        # Realizar la predicción
+        prediction = predict_image_class(file_path)
 
         if prediction is not None:
-            # Opcional: borrar los archivos después de procesarlos
+            # Opcional: borrar el archivo después de procesarlo
             os.remove(file_path)
-            os.remove(background_removed_path)
             return jsonify({"prediction": prediction}), 200
         else:
             return jsonify({"error": "Prediction failed"}), 500
@@ -722,5 +678,4 @@ if __name__ == "__main__":
     if not os.path.exists(app.config["UPLOAD_FOLDER"]):
         os.makedirs(app.config["UPLOAD_FOLDER"])
     port = int(os.environ.get("PORT", 5000))
-    port = int(os.environ.get("PORT", 1000))
     app.run(host="0.0.0.0", port=port, debug=True)
