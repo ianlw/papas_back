@@ -1,16 +1,13 @@
 import io
 import os
-import warnings
 
 import cv2
 import joblib
 import numpy as np
 import pandas as pd
-import rembg
 from flask import Flask
 from flask import jsonify
 from flask import request
-from flask_cors import CORS
 from PIL import Image
 from skimage.feature import graycomatrix
 from skimage.feature import graycoprops
@@ -18,10 +15,8 @@ from skimage.feature import local_binary_pattern
 
 # Configurar Flask
 app = Flask(__name__)
-CORS(app)  # Permitir conexiones desde otros dominios
 app.config["UPLOAD_FOLDER"] = "uploads"  # Carpeta para las imágenes cargadas
 app.config["ALLOWED_EXTENSIONS"] = {"png", "jpg", "jpeg"}  # Extensiones permitidas
-Image.MAX_IMAGE_PIXELS = None
 
 
 # Función para verificar si el archivo tiene una extensión permitida
@@ -30,38 +25,6 @@ def allowed_file(filename):
         "." in filename
         and filename.rsplit(".", 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
     )
-
-
-def remove_background(input_path, output_path):
-
-    with Image.open(input_path) as img:
-        # Obtiene las dimensiones actuales de la imagen
-        width, height = img.size
-
-        # Verifica si la imagen excede los 2000x2000 píxeles
-        if width > 2000 or height > 2000:
-            # Redimensiona la imagen manteniendo la proporción
-            img.thumbnail((1500, 1500))
-            print(f"Imagen redimensionada a: {img.size}")
-        else:
-            print("No se realiza ninguna modificación.")
-        img.save("./uploads/resized_image.png")
-
-    # Leer la imagen
-    with open("./uploads/resized_image.png", "rb") as file:
-        image_data = file.read()
-    # Eliminar el fondo usando rembg
-    result = rembg.remove(image_data)
-    # Convertir el resultado en una imagen de Pillow
-    image = Image.open(io.BytesIO(result)).convert("RGBA")
-    # Crear un fondo blanco del mismo tamaño que la imagen original
-    background = Image.new("RGBA", image.size, (255, 255, 255, 255))
-    # Combinar la imagen con el fondo blanco
-    final_image = Image.alpha_composite(background, image).convert("RGB")
-    # Guardar la imagen procesada en el directorio de salida
-    final_image.save(output_path)
-    return output_path
-    # print(f"Imagen guardada en: {output_path}")
 
 
 # Función para extraer características de color
@@ -99,9 +62,7 @@ def extract_shape_features(gray_image):
 # Función para procesar una sola imagen
 def process_single_image(image_path):
     try:
-        # Leer la imagen
-        remove = remove_background(image_path, "./uploads/remove_back.png")
-        image = np.array(Image.open(remove))
+        image = np.array(Image.open(image_path))
         gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
         # Extraer características
@@ -120,21 +81,15 @@ def process_single_image(image_path):
 
 # Función para cargar el modelo y realizar la predicción
 def predict_image_class(image_path, model_path="papas.pkl"):
-    # Suprimir advertencias sobre los nombres de características
-    warnings.filterwarnings("ignore", message=".*does not have valid feature names.*")
-
-    # Cargar el modelo .pkl
     try:
         model = joblib.load(model_path)
     except Exception as e:
         print(f"Error al cargar el modelo: {e}")
         return None
 
-    # Procesar la imagen y extraer las características
     features = process_single_image(image_path)
 
     if features is not None:
-        # Convertir las características a un DataFrame con los nombres de las características (si el modelo fue entrenado con nombres)
         feature_names = [
             "Color_0",
             "Color_1",
@@ -656,12 +611,9 @@ def predict_image_class(image_path, model_path="papas.pkl"):
             "Forma_Circularidad",
         ]
 
-        # Crear un DataFrame con los nombres de las características
         features_df = pd.DataFrame([features])
 
-        # Realizar la predicción con el DataFrame
         prediction = model.predict(features_df)
-        # Convertir la predicción a un tipo serializable (como int)
         prediction = int(prediction[0])
         return prediction
     else:
@@ -672,48 +624,36 @@ def predict_image_class(image_path, model_path="papas.pkl"):
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
-        # Verificar si se envió un archivo
+        # Verificar si el diccionario "file" está presente en la solicitud
         if "file" not in request.files:
             return jsonify({"error": "No file part in the request"}), 400
+        jsonify({"Sillego"})
 
+        # Obtener el archivo enviado
         file = request.files["file"]
 
-        # Verificar que el archivo tenga una extensión permitida
+        # Verificar si el archivo tiene un nombre válido y una extensión permitida
         if file.filename == "" or not allowed_file(file.filename):
             return jsonify({"error": "Invalid or missing file name"}), 400
 
-        # Crear el directorio de subida si no existe
-        if not os.path.exists(app.config["UPLOAD_FOLDER"]):
-            os.makedirs(app.config["UPLOAD_FOLDER"])
-
-        # Guardar el archivo temporalmente
+        # Guardar el archivo cargado en la carpeta de subida
         file_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
         file.save(file_path)
 
-        # Registrar que el archivo fue guardado
-        app.logger.info(f"Archivo guardado temporalmente en: {file_path}")
-
-        # Realizar la predicción
+        # Realizar la predicción con la imagen guardada
         prediction = predict_image_class(file_path)
 
+        # Si la predicción fue exitosa, devolver la respuesta con el resultado
         if prediction is not None:
-            # Opcional: borrar el archivo después de procesarlo
-            os.remove(file_path)
-            os.remove("./uploads/resized_image.png")
-            os.remove("./uploads/remove_back.png")
+            os.remove(file_path)  # Eliminar el archivo después de usarlo
             return jsonify({"prediction": prediction}), 200
         else:
             return jsonify({"error": "Prediction failed"}), 500
 
     except Exception as e:
-        # Capturar errores inesperados y registrar para depuración
-        app.logger.error(f"Error durante la predicción: {str(e)}")
-        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+        # En caso de error, devolver un mensaje de error
+        return jsonify({"error": f"Error during prediction: {str(e)}"}), 500
 
 
-# Iniciar el servidor de Flask
 if __name__ == "__main__":
-    if not os.path.exists(app.config["UPLOAD_FOLDER"]):
-        os.makedirs(app.config["UPLOAD_FOLDER"])
-    port = int(os.environ.get("PORT", 1000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=5002, debug=True)
