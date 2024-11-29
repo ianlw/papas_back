@@ -45,10 +45,10 @@ def remove_background(input_path, output_path):
             print(f"Imagen redimensionada a: {img.size}")
         else:
             print("No se realiza ninguna modificación.")
-        img.save("resized_image.png")
+        img.save("./uploads/resized_image.png")
 
     # Leer la imagen
-    with open("resized_image.png", "rb") as file:
+    with open("./uploads/resized_image.png", "rb") as file:
         image_data = file.read()
     # Eliminar el fondo usando rembg
     result = rembg.remove(image_data)
@@ -100,7 +100,7 @@ def extract_shape_features(gray_image):
 def process_single_image(image_path):
     try:
         # Leer la imagen
-        remove = remove_background(image_path, "remove_back.png")
+        remove = remove_background(image_path, "./uploads/remove_back.png")
         image = np.array(Image.open(remove))
         gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
@@ -699,6 +699,8 @@ def predict():
         if prediction is not None:
             # Opcional: borrar el archivo después de procesarlo
             os.remove(file_path)
+            os.remove("./uploads/resized_image.png")
+            os.remove("./uploads/remove_back.png")
             return jsonify({"prediction": prediction}), 200
         else:
             return jsonify({"error": "Prediction failed"}), 500
