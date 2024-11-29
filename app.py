@@ -16,12 +16,12 @@ from skimage.feature import graycomatrix
 from skimage.feature import graycoprops
 from skimage.feature import local_binary_pattern
 
+Image.MAX_IMAGE_PIXELS = None  # Desactivar el límite
 # Configurar Flask
 app = Flask(__name__)
 CORS(app)  # Permitir conexiones desde otros dominios
 app.config["UPLOAD_FOLDER"] = "uploads"  # Carpeta para las imágenes cargadas
 app.config["ALLOWED_EXTENSIONS"] = {"png", "jpg", "jpeg"}  # Extensiones permitidas
-Image.MAX_IMAGE_PIXELS = None
 
 
 # Función para verificar si el archivo tiene una extensión permitida
@@ -32,36 +32,38 @@ def allowed_file(filename):
     )
 
 
+# Función para eliminar el fondo de la imagen
 def remove_background(input_path, output_path):
-
-    with Image.open(input_path) as img:
-        # Obtiene las dimensiones actuales de la imagen
-        width, height = img.size
-
-        # Verifica si la imagen excede los 2000x2000 píxeles
-        if width > 2000 or height > 2000:
-            # Redimensiona la imagen manteniendo la proporción
-            img.thumbnail((1500, 1500))
-            print(f"Imagen redimensionada a: {img.size}")
-        else:
-            print("No se realiza ninguna modificación.")
-        img.save("./uploads/resized_image.png")
-
     # Leer la imagen
-    with open("./uploads/resized_image.png", "rb") as file:
+    with open(input_path, "rb") as file:
         image_data = file.read()
+
+    # Abrir la imagen en formato Pillow
+    image = Image.open(io.BytesIO(image_data))
+
+    # Redimensionar la imagen antes de eliminar el fondo (manteniendo la relación de aspecto)
+    image.thumbnail((3000, 3000), Image.LANCZOS)
+
+    # Convertir la imagen a bytes después de redimensionarla
+    with io.BytesIO() as byte_io:
+        image.save(byte_io, format="PNG")
+        image_data_resized = byte_io.getvalue()
+
     # Eliminar el fondo usando rembg
-    result = rembg.remove(image_data)
+    result = rembg.remove(image_data_resized)
+
     # Convertir el resultado en una imagen de Pillow
     image = Image.open(io.BytesIO(result)).convert("RGBA")
-    # Crear un fondo blanco del mismo tamaño que la imagen original
+
+    # Crear un fondo blanco del mismo tamaño que la imagen procesada
     background = Image.new("RGBA", image.size, (255, 255, 255, 255))
+
     # Combinar la imagen con el fondo blanco
     final_image = Image.alpha_composite(background, image).convert("RGB")
+
     # Guardar la imagen procesada en el directorio de salida
-    final_image.save(output_path)
-    return output_path
-    # print(f"Imagen guardada en: {output_path}")
+    final_image.save(output_path, "PNG")
+    print(f"Imagen guardada en: {output_path}")
 
 
 # Función para extraer características de color
@@ -100,8 +102,7 @@ def extract_shape_features(gray_image):
 def process_single_image(image_path):
     try:
         # Leer la imagen
-        remove = remove_background(image_path, "./uploads/remove_back.png")
-        image = np.array(Image.open(remove))
+        image = np.array(Image.open(image_path))
         gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
         # Extraer características
@@ -693,14 +694,19 @@ def predict():
         # Registrar que el archivo fue guardado
         app.logger.info(f"Archivo guardado temporalmente en: {file_path}")
 
-        # Realizar la predicción
-        prediction = predict_image_class(file_path)
+        # Eliminar el fondo de la imagen
+        background_removed_path = os.path.join(
+            app.config["UPLOAD_FOLDER"], "background_removed.png"
+        )
+        remove_background(file_path, background_removed_path)
+
+        # Realizar la predicción con la imagen sin fondo
+        prediction = predict_image_class(background_removed_path)
 
         if prediction is not None:
-            # Opcional: borrar el archivo después de procesarlo
+            # Opcional: borrar los archivos después de procesarlos
             os.remove(file_path)
-            os.remove("./uploads/resized_image.png")
-            os.remove("./uploads/remove_back.png")
+            os.remove(background_removed_path)
             return jsonify({"prediction": prediction}), 200
         else:
             return jsonify({"error": "Prediction failed"}), 500
@@ -715,5 +721,6 @@ def predict():
 if __name__ == "__main__":
     if not os.path.exists(app.config["UPLOAD_FOLDER"]):
         os.makedirs(app.config["UPLOAD_FOLDER"])
+    port = int(os.environ.get("PORT", 5000))
     port = int(os.environ.get("PORT", 1000))
     app.run(host="0.0.0.0", port=port, debug=True)
