@@ -1,5 +1,6 @@
 import io
 import os
+import base64
 import warnings
 
 import cv2
@@ -43,6 +44,7 @@ def remove_background(input_path, output_path):
 
     # Redimensionar la imagen antes de eliminar el fondo (manteniendo la relación de aspecto)
     image.thumbnail((3000, 3000), Image.LANCZOS)
+    print(f"Dimensiones de la imagen después del cambio: {image.size}")
 
     # Convertir la imagen a bytes después de redimensionarla
     with io.BytesIO() as byte_io:
@@ -57,13 +59,15 @@ def remove_background(input_path, output_path):
 
     # Crear un fondo blanco del mismo tamaño que la imagen procesada
     background = Image.new("RGBA", image.size, (255, 255, 255, 255))
+    print("Fondo borrado")
 
     # Combinar la imagen con el fondo blanco
     final_image = Image.alpha_composite(background, image).convert("RGB")
 
     # Guardar la imagen procesada en el directorio de salida
     final_image.save(output_path, "PNG")
-    print(f"Imagen guardada en: {output_path}")
+    return output_path
+    #print(f"Imagen guardada en: {output_path}")
 
 
 # Función para extraer características de color
@@ -102,7 +106,8 @@ def extract_shape_features(gray_image):
 def process_single_image(image_path):
     try:
         # Leer la imagen
-        image = np.array(Image.open(image_path))
+        remove = remove_background(image_path, "./uploads/remove_back.png")
+        image = np.array(Image.open(remove))
         gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
         # Extraer características
@@ -695,19 +700,28 @@ def predict():
         app.logger.info(f"Archivo guardado temporalmente en: {file_path}")
 
         # Eliminar el fondo de la imagen
-        background_removed_path = os.path.join(
-            app.config["UPLOAD_FOLDER"], "background_removed.png"
-        )
-        remove_background(file_path, background_removed_path)
+        #background_removed_path = os.path.join(
+ #           app.config["UPLOAD_FOLDER"], "background_removed.png"
+       # )
+        #remove_background(file_path, background_removed_path)
 
         # Realizar la predicción con la imagen sin fondo
-        prediction = predict_image_class(background_removed_path)
+        prediction = predict_image_class(file_path)
+        print("Predicción: ", prediction)
 
         if prediction is not None:
-            # Opcional: borrar los archivos después de procesarlos
+            # Leer la imagen a procesada a enviar al usuario
+            with open("./uploads/remove_back.png", "rb") as image_file:
+                # Codificar la imagen en Base64
+                encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+            # Opcional: borrar los archivos temporales
             os.remove(file_path)
-            os.remove(background_removed_path)
-            return jsonify({"prediction": prediction}), 200
+
+            # Retornar la predicción y la imagen en JSON
+            return jsonify({"prediction": prediction, "image": encoded_image}), 200
+
+            os.remove("./uploads/remove_back.png")
         else:
             return jsonify({"error": "Prediction failed"}), 500
 
@@ -721,5 +735,5 @@ def predict():
 if __name__ == "__main__":
     if not os.path.exists(app.config["UPLOAD_FOLDER"]):
         os.makedirs(app.config["UPLOAD_FOLDER"])
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=True)
